@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Warranty Generator</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel untuk JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'Courier Prime', monospace; }
+        
+        /* --- STYLE DILAYAR --- */
+        #print-area-thermal {
+            width: 80mm;
+            min-height: 100mm;
+            padding: 5mm;
+            border: 1px solid #ddd;
+        }
+
+        #print-area-certificate {
+            width: 210mm; /* A5 Landscape Width */
+            height: 148mm; /* A5 Landscape Height */
+            padding: 10mm;
+            border: 1px solid #ddd;
+        }
+
+        /* --- STYLE SAAT PRINT --- */
+        @media print {
+            @page { margin: 0; size: auto; }
+            body * { visibility: hidden; height: 0; overflow: hidden; }
+
+            /* THERMAL FORMAT */
+            .format-thermal @page { size: 80mm auto; }
+            .format-thermal #print-area-thermal, .format-thermal #print-area-thermal * {
+                visibility: visible; height: auto; overflow: visible;
+            }
+            .format-thermal #print-area-thermal {
+                position: absolute; left: 0; top: 0; width: 80mm;
+                padding: 2mm 4mm; border: none; box-shadow: none;
+            }
+
+            /* CERTIFICATE FORMAT */
+            .format-certificate @page { size: A5 landscape; margin: 0; }
+            .format-certificate #print-area-certificate, .format-certificate #print-area-certificate * {
+                visibility: visible; height: auto; overflow: visible;
+            }
+            .format-certificate #print-area-certificate {
+                position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+                transform: none !important; /* Reset scale saat print */
+                margin: 0 !important;
+                border: none; padding: 10mm; box-shadow: none;
+                -webkit-print-color-adjust: exact; print-color-adjust: exact;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- KOMPONEN IKON (Pengganti Lucide-React) ---
+        const IconBase = ({ children, className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                {children}
+            </svg>
+        );
+
+        const Printer = ({ className }) => <IconBase className={className}><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></IconBase>;
+        const QrCode = ({ className }) => <IconBase className={className}><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></IconBase>;
+        const Package = ({ className }) => <IconBase className={className}><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></IconBase>;
+        const Sparkles = ({ className }) => <IconBase className={className}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></IconBase>;
+        const Loader2 = ({ className }) => <IconBase className={`${className} animate-spin`}><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></IconBase>;
+        const AlertCircle = ({ className }) => <IconBase className={className}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></IconBase>;
+        const FileText = ({ className }) => <IconBase className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></IconBase>;
+        const CheckCircle = ({ className }) => <IconBase className={className}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></IconBase>;
+        const Edit = ({ className }) => <IconBase className={className}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></IconBase>;
+        const Eye = ({ className }) => <IconBase className={className}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></IconBase>;
+
+        // --- APLIKASI UTAMA ---
+        function App() {
+            const [formData, setFormData] = useState({
+                productName: 'Smart TV 42 Inch',
+                modelNumber: 'EL-TV-42X',
+                serialNumber: 'SN-2024-88921',
+                purchaseDate: new Date().toISOString().split('T')[0],
+                warrantyMonths: 12,
+                customerName: 'Pelanggan Umum',
+                aiNote: 'Garansi resmi mencakup kerusakan pabrik.'
+            });
+
+            const [qrDataUrl, setQrDataUrl] = useState('');
+            const [isAiLoading, setIsAiLoading] = useState(false);
+            const [printFormat, setPrintFormat] = useState('thermal'); // 'thermal' or 'certificate'
+            
+            // State khusus Mobile
+            const [activeMobileTab, setActiveMobileTab] = useState('form'); // 'form' | 'preview'
+            const [previewScale, setPreviewScale] = useState(1);
+
+            // API Key AI (Kosongkan sesuai instruksi)
+            const apiKey = "";
+
+            // --- LOGIKA SKALA PREVIEW RESPONSIF ---
+            useEffect(() => {
+                const handleResize = () => {
+                    const screenWidth = window.innerWidth;
+                    // Jika di layar mobile (< 1024px)
+                    if (screenWidth < 1024) {
+                        // Hitung skala agar A5 (lebar ~794px) muat di layar HP
+                        // Kurangi padding margin (sekitar 40px)
+                        const scale = Math.min((screenWidth - 40) / 794, 1); 
+                        setPreviewScale(scale);
+                    } else {
+                        setPreviewScale(0.8); // Default desktop scale
+                    }
+                };
+
+                window.addEventListener('resize', handleResize);
+                handleResize(); // Jalankan saat mount
+                return () => window.removeEventListener('resize', handleResize);
+            }, []);
+
+            // --- FUNGSI AI (GEMINI) ---
+            const callGemini = async (prompt) => {
+                if (isAiLoading) return;
+                setIsAiLoading(true);
+                try {
+                    const response = await fetch(
+                        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+                        }
+                    );
+                    if (!response.ok) throw new Error('Gagal menghubungi AI');
+                    const data = await response.json();
+                    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+                } catch (error) {
+                    console.error("Error AI:", error);
+                    alert("AI sedang sibuk. Coba manual.");
+                    return null;
+                } finally {
+                    setIsAiLoading(false);
+                }
+            };
+
+            const suggestDuration = async () => {
+                if (!formData.productName) return alert("Isi nama produk dulu!");
+                const res = await callGemini(`Saran durasi garansi (hanya angka bulan) untuk: "${formData.productName}". Contoh: "12".`);
+                if (res) setFormData(prev => ({ ...prev, warrantyMonths: res.replace(/[^0-9]/g, '') }));
+            };
+
+            const generateAiNote = async () => {
+                if (!formData.productName) return alert("Isi nama produk dulu!");
+                const res = await callGemini(`Buat 1 kalimat pendek ramah untuk garansi "${formData.productName}". Maks 10 kata.`);
+                if (res) setFormData(prev => ({ ...prev, aiNote: res.replace(/^"|"$/g, '') }));
+            };
+
+            // --- FUNGSI UTAMA ---
+            const getExpiryDate = () => {
+                const date = new Date(formData.purchaseDate);
+                date.setMonth(date.getMonth() + (parseInt(formData.warrantyMonths) || 0));
+                return date.toISOString().split('T')[0];
+            };
+
+            const handleChange = (e) => {
+                const { name, value } = e.target;
+                setFormData(prev => ({ ...prev, [name]: value }));
+            };
+
+            const handlePrint = () => {
+                // Set body class untuk mengontrol CSS print yang spesifik
+                document.body.className = `bg-gray-50 text-gray-800 format-${printFormat}`;
+                window.print();
+            };
+
+            useEffect(() => {
+                const generateQR = async () => {
+                    const dataToEncode = JSON.stringify({
+                        sn: formData.serialNumber,
+                        model: formData.modelNumber,
+                        exp: getExpiryDate(),
+                        cust: formData.customerName
+                    });
+                    setQrDataUrl(`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(dataToEncode)}`);
+                };
+                const timer = setTimeout(generateQR, 500);
+                return () => clearTimeout(timer);
+            }, [formData]);
+
+            return (
+                <div className="min-h-screen pb-24 lg:pb-8">
+                
+                    {/* HEADER DESKTOP & MOBILE */}
+                    <div className="bg-white shadow-sm border-b sticky top-0 z-30 print:hidden">
+                        <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                                <QrCode className="w-6 h-6 text-blue-800" />
+                                <div>
+                                    <h1 className="text-lg font-bold text-blue-900 leading-tight">E-Warranty</h1>
+                                    <p className="text-[10px] text-gray-500 hidden md:block">Generator Struk & Sertifikat</p>
+                                </div>
+                            </div>
+                            
+                            {/* Desktop Toolbar */}
+                            <div className="hidden lg:flex gap-2">
+                                <div className="bg-gray-100 border rounded-lg p-1 flex">
+                                    <button onClick={() => setPrintFormat('thermal')} className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 ${printFormat === 'thermal' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500'}`}>
+                                        <Printer className="w-3 h-3" /> Thermal
+                                    </button>
+                                    <button onClick={() => setPrintFormat('certificate')} className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 ${printFormat === 'certificate' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500'}`}>
+                                        <FileText className="w-3 h-3" /> PDF
+                                    </button>
+                                </div>
+                                <button onClick={handlePrint} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg shadow text-xs font-bold flex items-center gap-2">
+                                    <Printer className="w-4 h-4" /> Cetak
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* MOBILE TABS NAVIGATION */}
+                        <div className="lg:hidden flex border-t">
+                            <button 
+                                onClick={() => setActiveMobileTab('form')} 
+                                className={`flex-1 py-3 text-sm font-bold flex justify-center items-center gap-2 ${activeMobileTab === 'form' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-gray-500'}`}
+                            >
+                                <Edit className="w-4 h-4"/> Input Data
+                            </button>
+                            <button 
+                                onClick={() => setActiveMobileTab('preview')} 
+                                className={`flex-1 py-3 text-sm font-bold flex justify-center items-center gap-2 ${activeMobileTab === 'preview' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-gray-500'}`}
+                            >
+                                <Eye className="w-4 h-4"/> Preview
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="max-w-6xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        
+                        {/* === TAB 1: FORM INPUT === */}
+                        <div className={`lg:col-span-4 bg-white p-5 rounded-xl shadow-sm border border-gray-200 print:hidden h-fit ${activeMobileTab === 'form' ? 'block' : 'hidden lg:block'}`}>
+                            <div className="flex items-center gap-2 mb-4 pb-2 border-b">
+                                <Package className="w-5 h-5 text-blue-600" />
+                                <h2 className="text-lg font-bold">Data Pelanggan</h2>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-xs font-semibold text-gray-600 uppercase">Produk & Model</label>
+                                    <input type="text" name="productName" value={formData.productName} onChange={handleChange} className="w-full border p-2.5 rounded-lg text-sm mb-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Nama Produk" />
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <input type="text" name="modelNumber" value={formData.modelNumber} onChange={handleChange} className="w-full border p-2.5 rounded-lg text-sm outline-none" placeholder="Model/SKU" />
+                                        <input type="text" name="serialNumber" value={formData.serialNumber} onChange={handleChange} className="w-full border p-2.5 rounded-lg text-sm font-mono outline-none" placeholder="Serial Number" />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="text-xs font-semibold text-gray-600 uppercase">Garansi</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <input type="date" name="purchaseDate" value={formData.purchaseDate} onChange={handleChange} className="w-full border p-2.5 rounded-lg text-sm outline-none" />
+                                        <div className="flex gap-1">
+                                            <input type="number" name="warrantyMonths" value={formData.warrantyMonths} onChange={handleChange} className="w-full border p-2.5 rounded-lg text-sm outline-none" placeholder="Bulan" />
+                                            <button onClick={suggestDuration} disabled={isAiLoading} className="bg-indigo-100 text-indigo-700 px-3 rounded-lg hover:bg-indigo-200" title="Tanya AI"><Sparkles className="w-4 h-4"/></button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="text-xs font-semibold text-gray-600 uppercase">Pelanggan</label>
+                                    <input type="text" name="customerName" value={formData.customerName} onChange={handleChange} className="w-full border p-2.5 rounded-lg text-sm mb-2 outline-none" placeholder="Nama Pelanggan" />
+                                    
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="text-xs font-semibold text-gray-600 uppercase">Catatan</label>
+                                        <button onClick={generateAiNote} disabled={isAiLoading} className="text-[10px] text-indigo-600 font-bold flex gap-1 items-center bg-indigo-50 px-2 py-1 rounded"><Sparkles className="w-3 h-3"/> AUTO TEXT</button>
+                                    </div>
+                                    <textarea name="aiNote" value={formData.aiNote} onChange={handleChange} rows="2" className="w-full border p-2.5 rounded-lg text-sm outline-none" />
+                                </div>
+
+                                {/* Tombol Pindah ke Preview (Mobile Only) */}
+                                <button 
+                                    onClick={() => setActiveMobileTab('preview')} 
+                                    className="lg:hidden w-full bg-blue-50 text-blue-700 py-3 rounded-lg font-bold mt-2 border border-blue-200"
+                                >
+                                    Lihat Preview &raquo;
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* === TAB 2: PREVIEW AREA === */}
+                        <div className={`lg:col-span-8 flex flex-col items-center bg-gray-100 lg:bg-gray-200/50 lg:rounded-xl lg:p-8 lg:border border-gray-300 min-h-[500px] p-4 ${activeMobileTab === 'preview' ? 'block' : 'hidden lg:flex'}`}>
+                            
+                            {/* Mobile Format Switcher */}
+                            <div className="lg:hidden w-full mb-4 flex justify-center">
+                                <div className="bg-white border rounded-full p-1 flex shadow-sm">
+                                    <button onClick={() => setPrintFormat('thermal')} className={`px-4 py-2 text-xs font-bold rounded-full transition-colors ${printFormat === 'thermal' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>Struk 80mm</button>
+                                    <button onClick={() => setPrintFormat('certificate')} className={`px-4 py-2 text-xs font-bold rounded-full transition-colors ${printFormat === 'certificate' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>PDF A5</button>
+                                </div>
+                            </div>
+
+                            <p className="text-sm text-gray-500 print:hidden mb-4 font-bold uppercase tracking-wider flex items-center gap-2 hidden lg:flex">
+                                Preview: {printFormat === 'thermal' ? 'Struk Thermal 80mm' : 'Sertifikat Digital A5 (PDF)'}
+                            </p>
+                            
+                            {/* --- TAMPILAN PREVIEW --- */}
+                            {printFormat === 'thermal' ? (
+                                
+                                // Layout Thermal
+                                <div id="print-area-thermal" className="bg-white shadow-xl text-black font-mono transform transition-all duration-300">
+                                    <div className="text-center border-b-2 border-black pb-2 mb-2">
+                                        <h2 className="text-xl font-black uppercase tracking-tight">GARANSI RESMI</h2>
+                                        <p className="text-[10px]">ELECTRONICS AUTHENTIC CENTER</p>
+                                        <p className="text-[10px]">================================</p>
+                                    </div>
+                                    <div className="mb-2">
+                                        <p className="text-[10px] font-bold">PRODUK:</p>
+                                        <p className="text-sm font-bold leading-tight mb-1">{formData.productName}</p>
+                                        <p className="text-xs">{formData.modelNumber}</p>
+                                    </div>
+                                    <div className="flex justify-between items-end border-b border-black pb-2 mb-2">
+                                        <div>
+                                            <p className="text-[10px] font-bold">SERIAL NUMBER:</p>
+                                            <p className="text-sm font-bold bg-black text-white px-1 inline-block">{formData.serialNumber}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-center my-3">
+                                        {qrDataUrl && <img src={qrDataUrl} alt="QR" className="w-32 h-32 border-2 border-black p-1" />}
+                                    </div>
+                                    <p className="text-center text-[10px] mb-3">Scan untuk klaim online</p>
+                                    <div className="border-t border-b border-dashed border-black py-2 mb-2 text-xs">
+                                        <div className="flex justify-between"><span>Tgl Beli:</span><span>{formData.purchaseDate}</span></div>
+                                        <div className="flex justify-between font-bold"><span>Berlaku s/d:</span><span>{getExpiryDate()}</span></div>
+                                        <div className="flex justify-between mt-1"><span>Durasi:</span><span>{formData.warrantyMonths} Bulan</span></div>
+                                    </div>
+                                    <div className="text-center">
+                                        <p className="text-[10px] italic mb-2">"{formData.aiNote}"</p>
+                                        <p className="text-[10px]">Pelanggan: {formData.customerName}</p>
+                                        <p className="text-[8px] mt-2 text-gray-500">Dicetak: {new Date().toLocaleString()}</p>
+                                    </div>
+                                </div>
+
+                            ) : (
+
+                                // Layout Sertifikat (Scaled)
+                                <div 
+                                    id="print-area-certificate" 
+                                    className="bg-white shadow-xl text-gray-800 relative overflow-hidden"
+                                    style={{
+                                        // Skala dinamis berdasarkan lebar layar HP
+                                        transform: `scale(${previewScale})`,
+                                        transformOrigin: 'top center',
+                                        marginBottom: '-20%' // Kompensasi ruang kosong akibat scale down
+                                    }}
+                                >
+                                    {/* Dekorasi Background */}
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600 rounded-bl-[100px] z-0 opacity-10"></div>
+                                    <div className="absolute bottom-0 left-0 w-24 h-24 bg-blue-600 rounded-tr-[80px] z-0 opacity-10"></div>
+                                    
+                                    <div className="relative z-10 h-full flex flex-col justify-between">
+                                        {/* Header Sertifikat */}
+                                        <div className="flex justify-between items-start border-b-2 border-blue-900 pb-4 mb-4">
+                                            <div>
+                                                <h1 className="text-3xl font-serif font-bold text-blue-900 tracking-wide">KARTU GARANSI</h1>
+                                                <p className="text-sm text-blue-600 uppercase tracking-widest font-semibold">Certificate of Warranty</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="flex items-center gap-1 justify-end text-blue-900 font-bold">
+                                                    <CheckCircle className="w-5 h-5" /> <span>RESMI</span>
+                                                </div>
+                                                <p className="text-xs text-gray-500">No. Ref: {Math.random().toString(36).substr(2, 9).toUpperCase()}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Konten Utama */}
+                                        <div className="grid grid-cols-3 gap-6 flex-grow">
+                                            <div className="col-span-2 space-y-4">
+                                                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                                                    <p className="text-xs text-blue-500 uppercase font-bold mb-1">Informasi Produk</p>
+                                                    <h3 className="text-xl font-bold text-gray-900">{formData.productName}</h3>
+                                                    <p className="text-md text-gray-600 font-mono mt-1">Model: {formData.modelNumber}</p>
+                                                    <div className="mt-2 inline-block bg-white border border-blue-200 px-3 py-1 rounded text-sm font-bold text-blue-800">
+                                                        SN: {formData.serialNumber}
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <p className="text-xs text-gray-500 uppercase font-bold">Pelanggan</p>
+                                                        <p className="font-semibold text-lg">{formData.customerName}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-gray-500 uppercase font-bold">Periode Garansi</p>
+                                                        <p className="font-semibold text-lg">{formData.warrantyMonths} Bulan</p>
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <p className="text-xs text-gray-500 uppercase font-bold">Masa Berlaku</p>
+                                                    <div className="flex items-center gap-2 text-gray-700">
+                                                        <span className="font-medium">{formData.purchaseDate}</span>
+                                                        <span>s/d</span>
+                                                        <span className="font-bold text-red-600 text-lg">{getExpiryDate()}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-col items-center justify-center border-l border-gray-200 pl-6 text-center">
+                                                <div className="bg-white p-2 border border-gray-200 shadow-sm rounded-lg mb-3">
+                                                    {qrDataUrl && <img src={qrDataUrl} alt="QR" className="w-32 h-32" />}
+                                                </div>
+                                                <p className="text-xs text-gray-500 mb-4">Scan QR untuk verifikasi keaslian dan klaim garansi.</p>
+                                                <div className="mt-auto w-full pt-4 border-t border-gray-200">
+                                                    <p className="text-[10px] text-gray-400 italic">"{formData.aiNote}"</p>
+                                                    <p className="text-[10px] text-gray-400 mt-2">Dicetak pada: {new Date().toLocaleDateString()}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="mt-8 text-center print:hidden text-xs text-gray-500 bg-white p-3 rounded-lg border border-gray-200 shadow-sm max-w-md">
+                                <AlertCircle className="w-4 h-4 mx-auto mb-1 text-blue-500"/>
+                                {printFormat === 'thermal' ? "Struk Thermal 80mm" : "Sertifikat A5 (PDF)"}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* --- MOBILE STICKY FOOTER --- */}
+                    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t p-4 z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+                        <button 
+                            onClick={handlePrint}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl shadow-lg flex items-center justify-center gap-2 font-bold text-lg active:scale-95 transition-transform"
+                        >
+                            {printFormat === 'thermal' ? <Printer className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                            {printFormat === 'thermal' ? "Cetak Struk Sekarang" : "Simpan PDF Sekarang"}
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
